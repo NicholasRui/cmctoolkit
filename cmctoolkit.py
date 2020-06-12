@@ -457,6 +457,160 @@ class Snapshot:
 
         return good
 
+    def add_photometry(self, filttable):
+        """
+        Function which, assuming black-body behavior, assigns observed magnitudes
+        to stars in desired filters
+
+        For each filter, adds the following columns (# = filter name):
+        absMag_#: absolute magnitude in filter # for single (np.nan for binary or black hole)
+        bin_absMag0_#: absolute magnitude in filter # for first star in binary (np.nan for single or black hole)
+        bin_absMag1_#: absolute magnitude in filter # for second star in binary (np.nan for single or black hole)
+        tot_absMag_#: total magnitude in filter #, same as absMag_# for singles and is the magnitude sum of a binary pair if binary
+
+        If distance is given, also add:
+        obsMag_#: observed magnitude in filter # for single (np.nan for binary or black hole)
+        bin_obsMag0_#: observed magnitude in filter # for first star in binary (np.nan for single or black hole)
+        bin_obsMag1_#: observed magnitude in filter # for second star in binary (np.nan for single or black hole)
+        tot_obsMag_#: total observed magnitude in filter #, same as absMag_# for singles and is the magnitude sum of a binary pair if binary
+
+        Parameters
+        ----------
+        filttable: str or pd.DataFrame
+            if str, path to filter table
+            if pd.DataFrame, table containing information about filters (see function: load_filtertable)
+
+        Returns
+        -------
+        none
+        """
+        # If Teff has not been calculated, calculate it
+        if 'Teff[K]' not in self.data.keys():
+            self.calc_Teff()
+
+        if type(filttable) == str:
+            filttable = load_filtertable(filttable)
+        elif type(filttable) != pd.DataFrame:
+            raise ValueError('filttable must be either str or pd.DataFrame')
+
+        # Read filter files
+        filtnames = np.array(filttable['filtname'])
+        filtfuncs = [load_filter(filttable.loc[ii,'path']) for ii in range(len(filttable))]
+
+        wavelength_mean_angstrom = np.array(filttable['wavelength_mean[ANGSTROM]'])
+        wavelength_min_angstrom = np.array(filttable['wavelength_min[ANGSTROM]'])
+        wavelength_max_angstrom = np.array(filttable['wavelength_max[ANGSTROM]'])
+        wavelength_min = self.convert_units(wavelength_min_angstrom, 'angstrom', 'cm')
+        wavelength_max = self.convert_units(wavelength_max_angstrom, 'angstrom', 'cm')
+        passband_hz = c / wavelength_min - c / wavelength_max
+
+        zp_spectralflux_jy = np.array(filttable['zp_spectralflux[JY]'])
+        zp_spectralflux = self.convert_units(zp_spectralflux_jy, 'jy', 'g/s2')
+
+        if self.dist is not None:
+            distance_modulus = 5 * np.log10(self.dist / 0.01)
+
+        # Calculate magnitudes
+        for ii in range(len(filtnames)):
+            self.data['absMag_' + filtnames[ii]] = np.nan * np.ones(len(self.data))
+            self.data['bin_absMag0_' + filtnames[ii]] = np.nan * np.ones(len(self.data))
+            self.data['bin_absMag1_' + filtnames[ii]] = np.nan * np.ones(len(self.data))
+
+            # Get filter function information
+            wavelength_cm = np.array(self.convert_units(filtfuncs[ii]['wavelength[ANGSTROM]'], 'angstrom', 'cm'))
+            transmission = np.array(filtfuncs[ii]['transmission'])
+
+            # Use trapezoid rule to evaluate integral of filtfunc * Planck distribution
+            Teff_K = self.data.loc[(self.data['binflag'] != 1) & (self.data['startype'] != 14), 'Teff[K]']
+            planck = 2 * h * c ** 2 / (wavelength_cm.reshape((1, wavelength_cm.size)) ** 5 * (np.exp(h * c / (k * np.outer(Teff_K, wavelength_cm))) - 1))
+
+            planck_weighted = planck * transmission.reshape((1, transmission.size))
+            integrated_planck_weighted = np.sum(0.5 * (planck_weighted[:,1:] + planck_weighted[:,:-1]) * (wavelength_cm[1:] - wavelength_cm[:-1]), axis=1)
+
+            rad_rsun = self.data.loc[(self.data['binflag'] != 1) & (self.data['startype'] != 14), 'radius[RSUN]']
+            rad_cm = self.convert_units(rad_rsun, 'rsun', 'cm')
+            luminosity_cgs = 4 * np.pi ** 2 * rad_cm ** 2 * integrated_planck_weighted
+
+            spectral_lum = luminosity_cgs / (4 * np.pi * self.convert_units(10, 'pc', 'cm') ** 2 * passband_hz[ii])
+
+            # Calculate magnitudes (exclude black holes)
+            self.data.loc[(self.data['binflag'] != 1) & (self.data['startype'] != 14), 'absMag_' + filtnames[ii]] = -2.5 * np.log10(spectral_lum / zp_spectralflux[ii])
+
+            if self.dist is not None:
+                self.data['obsMag_' + filtnames[ii]] = self.data['absMag_' + filtnames[ii]]
+                self.data['obsMag_' + filtnames[ii]] += distance_modulus
+
+            # Repeat this process for the first star in each binary
+            Teff0_K = self.data.loc[(self.data['binflag'] == 1) & (self.data['bin_startype0'] != 14), 'bin_Teff0[K]']
+            planck0 = 2 * h * c ** 2 / (wavelength_cm.reshape((1, wavelength_cm.size)) ** 5 * (np.exp(h * c / (k * np.outer(Teff0_K, wavelength_cm))) - 1))
+
+            planck_weighted0 = planck0 * transmission.reshape((1, transmission.size))
+            integrated_planck_weighted0 = np.sum(0.5 * (planck_weighted0[:,1:] + planck_weighted0[:,:-1]) * (wavelength_cm[1:] - wavelength_cm[:-1]), axis=1)
+
+            rad0_rsun = self.data.loc[(self.data['binflag'] == 1) & (self.data['bin_startype0'] != 14), 'bin_star_radius0[RSUN]']
+            rad0_cm = self.convert_units(rad0_rsun, 'rsun', 'cm')
+            luminosity0_cgs = 4 * np.pi ** 2 * rad0_cm ** 2 * integrated_planck_weighted0
+
+            spectral_lum0 = luminosity0_cgs / (4 * np.pi * self.convert_units(10, 'pc', 'cm') ** 2 * passband_hz[ii])
+
+            # Calculate magnitudes
+            self.data.loc[(self.data['binflag'] == 1) & (self.data['bin_startype0'] != 14), 'bin_absMag0_' + filtnames[ii]] = -2.5 * np.log10(spectral_lum0 / zp_spectralflux[ii])
+
+            if self.dist is not None:
+                self.data['bin_obsMag0_' + filtnames[ii]] = self.data['bin_absMag0_' + filtnames[ii]]
+                self.data['bin_obsMag0_' + filtnames[ii]] += distance_modulus
+
+            # Repeat this process for the second star in each binary
+            Teff1_K = self.data.loc[(self.data['binflag'] == 1) & (self.data['bin_startype1'] != 14), 'bin_Teff1[K]']
+            planck1 = 2 * h * c ** 2 / (wavelength_cm.reshape((1, wavelength_cm.size)) ** 5 * (np.exp(h * c / (k * np.outer(Teff1_K, wavelength_cm))) - 1))
+
+            planck_weighted1 = planck1 * transmission.reshape((1, transmission.size))
+            integrated_planck_weighted1 = np.sum(0.5 * (planck_weighted1[:,1:] + planck_weighted1[:,:-1]) * (wavelength_cm[1:] - wavelength_cm[:-1]), axis=1)
+
+            rad1_rsun = self.data.loc[(self.data['binflag'] == 1) & (self.data['bin_startype1'] != 14), 'bin_star_radius1[RSUN]']
+            rad1_cm = self.convert_units(rad1_rsun, 'rsun', 'cm')
+            luminosity1_cgs = 4 * np.pi ** 2 * rad1_cm ** 2 * integrated_planck_weighted1
+
+            spectral_lum1 = luminosity1_cgs / (4 * np.pi * self.convert_units(10, 'pc', 'cm') ** 2 * passband_hz[ii])
+
+            # Calculate magnitudes
+            self.data.loc[(self.data['binflag'] == 1) & (self.data['bin_startype1'] != 14), 'bin_absMag1_' + filtnames[ii]] = -2.5 * np.log10(spectral_lum1 / zp_spectralflux[ii])
+
+            if self.dist is not None:
+                self.data['bin_obsMag1_' + filtnames[ii]] = self.data['bin_absMag1_' + filtnames[ii]]
+                self.data['bin_obsMag1_' + filtnames[ii]] += distance_modulus
+                
+            # Add total magnitude columns together
+            self.data['tot_absMag_' + filtnames[ii]] = np.nan * np.ones(len(self.data))
+            
+            good_single = (self.data['binflag'] != 1) & (self.data['startype'] != 14)
+            self.data.loc[good_single, 'tot_absMag_' + filtnames[ii]] = self.data.loc[good_single, 'absMag_' + filtnames[ii]]
+            
+            good_binary = (self.data['binflag'] == 1) & (self.data['bin_startype0'] != 14) & (self.data['bin_startype1'] != 14)
+            self.data.loc[good_binary, 'tot_absMag_' + filtnames[ii]] = add_mags(self.data.loc[good_binary, 'bin_absMag0_' + filtnames[ii]],
+                                                                                 self.data.loc[good_binary, 'bin_absMag1_' + filtnames[ii]])
+                                                                                 
+            good0_bad1 = (self.data['binflag'] == 1) & (self.data['bin_startype0'] != 14) & (self.data['bin_startype1'] == 14)
+            self.data.loc[good0_bad1, 'tot_absMag_' + filtnames[ii]] = self.data.loc[good0_bad1, 'bin_absMag0_' + filtnames[ii]]
+            
+            good1_bad0 = (self.data['binflag'] == 1) & (self.data['bin_startype0'] == 14) & (self.data['bin_startype1'] != 14)
+            self.data.loc[good1_bad0, 'tot_absMag_' + filtnames[ii]] = self.data.loc[good1_bad0, 'bin_absMag1_' + filtnames[ii]]
+            
+            if self.dist is not None:
+                self.data['tot_obsMag_' + filtnames[ii]] = self.data['tot_absMag_' + filtnames[ii]]
+                self.data['tot_obsMag_' + filtnames[ii]] += distance_modulus
+
+            # Add filter to filtertable
+            filterrow = pd.DataFrame({'filtname': [filtnames[ii]],
+                                          'path': [filttable.loc[ii,'path']],
+                     'wavelength_mean[ANGSTROM]': [wavelength_mean_angstrom[ii]],
+                      'wavelength_min[ANGSTROM]': [wavelength_min_angstrom[ii]],
+                      'wavelength_max[ANGSTROM]': [wavelength_max_angstrom[ii]],
+                           'zp_spectralflux[JY]': [zp_spectralflux_jy[ii]],
+                                     })
+
+            self.filtertable = self.filtertable.append(filterrow, ignore_index=True)
+
     def make_2d_projection(self, seed=0):
         """
         Appends to a snapshot table a column projecting stellar positions onto the
@@ -760,7 +914,7 @@ class Snapshot:
         Returns
         -------
         bin_edges: array-like
-            Bin edges of mass function
+            Bin edges of mass function (pc)
 
         veldisp_profile: array-like
             Velocity dispersion profile (km/s)
@@ -935,7 +1089,7 @@ class Snapshot:
 
         return alpha
 
-    def make_smoothed_number_profile(self, bins=80, min_mass=None, max_mass=None, fluxdict=None, startypes=startype_star, min_logr=-3):
+    def make_smoothed_number_profile(self, bins=80, min_mass=None, max_mass=None, fluxdict=None, startypes=startype_star, min_logr=-1.5):
         """
         Creates smoothed number density profile by smearing out stars probabilistically.
 
@@ -960,7 +1114,7 @@ class Snapshot:
         startypes: array-like (default: startype_star)
             If specified, only include startypes in this list
 
-        min_logr: float (default: -3)
+        min_logr: float (default: -1.5)
             Minimum logarithmic radius in parsec
 
         Returns
@@ -985,7 +1139,7 @@ class Snapshot:
                       | ((self.data['binflag'] == 1) & (np.in1d(bin_startype0_arr, startypes) | np.in1d(bin_startype1_arr, startypes)) ) )
 
         r_pc_arr = self.convert_units(self.data.loc[good, 'r'], 'code', 'pc')
-        r_pc_arr = r_pc_arr.reshape(len(r_pc_arr), 1)
+        r_pc_arr = r_pc_arr.values.reshape(len(r_pc_arr), 1)
 
         # Probabilistically count stars in each bin
         bin_edges = np.logspace( min_logr, np.log10(np.max(r_pc_arr)), bins+1 )
@@ -1008,7 +1162,7 @@ class Snapshot:
 
         return bin_center, profile, e_profile
 
-    def make_smoothed_brightness_profile(self, filtname, bins=80, min_mass=None, max_mass=None, max_lum=None, fluxdict=None, startypes=startype_star, min_logr=-3):
+    def make_smoothed_brightness_profile(self, filtname, bins=80, min_mass=None, max_mass=None, max_lum=None, fluxdict=None, startypes=startype_star, min_logr=-1.5):
         """
         Creates smoothed surface brightness profile by smearing out stars probabilistically.
 
@@ -1039,7 +1193,7 @@ class Snapshot:
         startypes: array-like (default: startype_star)
             If specified, only include startypes in this list
 
-        min_logr: float (default: -3)
+        min_logr: float (default: -1.5)
             Minimum logarithmic radius in parsec
 
         Returns
@@ -1048,8 +1202,10 @@ class Snapshot:
             radial points at which profile is evaluated (in arcsec)
 
         profile: array-like
-            array of surface brightness values
+            array of surface brightness values (mag arcsec^-2)
         """
+        assert self.dist is not None
+        
         # Make relevant cuts
         startype_arr = self.data['startype']
         bin_startype0_arr = self.data['bin_startype0']
@@ -1059,7 +1215,7 @@ class Snapshot:
         good = good & ( ((self.data['binflag'] != 1) & np.in1d(startype_arr, startypes))
                       | ((self.data['binflag'] == 1) & (np.in1d(bin_startype0_arr, startypes) | np.in1d(bin_startype1_arr, startypes)) ) )
         r_pc_arr = self.convert_units(self.data.loc[good, 'r'], 'code', 'pc')
-        r_pc_arr = r_pc_arr.reshape(len(r_pc_arr), 1)
+        r_pc_arr = r_pc_arr.values.reshape(len(r_pc_arr), 1)
 
         # Probabilistically count stars in each bin
         bin_edges = np.logspace( min_logr, np.log10(np.max(r_pc_arr)), bins+1 )
@@ -1090,7 +1246,7 @@ class Snapshot:
         mag[good_bin01] = add_mags(binmag0[good_bin01], binmag1[good_bin01])
         mag[good_bin0] = binmag0[good_bin0]
         mag[good_bin1] = binmag1[good_bin1]
-        mag = mag.reshape(len(mag), 1)
+        mag = mag.values.reshape(len(mag), 1)
 
         mag_weight = np.sum(10 ** (-mag / 2.5) * weight, axis=0)
 
@@ -1105,7 +1261,7 @@ class Snapshot:
 
         return bin_center, profile
 
-    def make_smoothed_veldisp_profile(self, bins=80, min_mass=None, max_mass=None, dmax=None, fluxdict=None, startypes=startype_star, min_logr=-3):
+    def make_smoothed_veldisp_profile(self, bins=80, min_mass=None, max_mass=None, dmax=None, fluxdict=None, startypes=startype_star, min_logr=-1.5):
         """
         Creates smoothed velocity dispersion profile by smearing out stars probabilistically.
 
@@ -1133,7 +1289,7 @@ class Snapshot:
         startypes: array-like (default: startype_star)
             If specified, only include startypes in this list
         
-        min_logr: float (default: -3)
+        min_logr: float (default: -1.5)
             Minimum logarithmic radius in parsec
 
         Returns
@@ -1156,7 +1312,7 @@ class Snapshot:
         good = good & ( ((self.data['binflag'] != 1) & np.in1d(startype_arr, startypes))
                       | ((self.data['binflag'] == 1) & (np.in1d(bin_startype0_arr, startypes) | np.in1d(bin_startype1_arr, startypes)) ) )
         r_pc_arr = self.convert_units(self.data.loc[good, 'r'], 'code', 'pc')
-        r_pc_arr = r_pc_arr.reshape(len(r_pc_arr), 1)
+        r_pc_arr = r_pc_arr.values.reshape(len(r_pc_arr), 1)
 
         # Probabilistically count stars in each bin
         if dmax is not None:
@@ -1236,7 +1392,7 @@ class Snapshot:
         
         # Calculate weighted mass distribution
         r_pc_arr = self.convert_units(self.data.loc[good, 'r'], 'code', 'pc')
-        r_pc_arr = r_pc_arr.reshape(len(r_pc_arr), 1)
+        r_pc_arr = r_pc_arr.values.reshape(len(r_pc_arr), 1)
 
         binflag = np.array(self.data.loc[good, 'binflag'])
         startype0 = np.array(self.data.loc[good, 'bin_startype0'])
@@ -1278,10 +1434,10 @@ class Snapshot:
         weight = r_pc_arr ** -1 * ( np.sqrt(inner) - np.sqrt(outer) )
         
         if qty == 'mass':
-            bin_mass = np.sum(mass_arr.reshape(len(mass_arr), 1) * weight, axis=0)
+            bin_mass = np.sum(mass_arr.values.reshape(len(mass_arr), 1) * weight, axis=0)
             cumdist = np.cumsum(bin_mass) / np.sum(bin_mass)
         elif qty == 'light':
-            bin_light = np.sum(lum_arr.reshape(len(lum_arr), 1) * weight, axis=0)
+            bin_light = np.sum(lum_arr.values.reshape(len(lum_arr), 1) * weight, axis=0)
             cumdist = np.cumsum(bin_light) / np.sum(bin_light)
         
         # Interpolate bin_center AS A FUNCTION OF cumdist and calculate rhm
