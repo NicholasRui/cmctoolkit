@@ -808,7 +808,7 @@ class Snapshot:
             If specified, only include stars inside this projected radius
 
         max_lum: float (default: None)
-            IF specified, only include stars below this luminosity [LSUN]
+            If specified, only include stars below this luminosity [LSUN]
 
         fluxdict: dict (default: None)
             If specified, makes upper and lower (observed) magnitude cuts in certain filters
@@ -1045,6 +1045,10 @@ class Snapshot:
         ----------
         seed: int (default: None)
             random seed, if None then don't set a seed
+        
+        Returns
+        -------
+        none
         """
         r_arr = self.data['r']
         vr_arr = self.data['vr']
@@ -1593,7 +1597,7 @@ class Snapshot:
             If specified, only include stars below this mass
             
         max_lum: float (default: None)
-            IF specified, only include stars below this luminosity [LSUN]
+            If specified, only include stars below this luminosity [LSUN]
 
         fluxdict: dict (default: None)
             If specified, makes upper and lower (observed) magnitude cuts in certain filters
