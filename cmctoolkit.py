@@ -123,8 +123,7 @@ def load_filtertable(fname):
     Filter function which loads ascii filter functions with five columns:
        1. filtname
        2. path
-       3. weff[ANGSTROM] ; effective wavelength width
-       6. zp_spectralflux[ERG/S/CM2/ANGSTROM]
+       3. zp_spectralflux[ERG/S/CM2/ANGSTROM]
     Function assumes no header. Also assumes that the last line is empty.
 
     Parameters
@@ -145,12 +144,10 @@ def load_filtertable(fname):
     # Convert to a pandas table
     filtname = np.array([text[ii].split()[0] for ii in range(len(text))])
     path = np.array([text[ii].split()[1] for ii in range(len(text))])
-    wl_effective = np.array([text[ii].split()[2] for ii in range(len(text))])
-    zp_spectralflux = np.array([text[ii].split()[3] for ii in range(len(text))])
+    zp_spectralflux = np.array([text[ii].split()[2] for ii in range(len(text))])
     
     filttable = {'filtname': filtname,
             'path': path,
-            'weff[ANGSTROM]': wl_effective.astype(float),
             'zp_spectralflux[ERG/S/CM2/ANGSTROM]': zp_spectralflux.astype(float)}
     filttable = pd.DataFrame(filttable)
 
@@ -601,7 +598,6 @@ def SSE_MS_get_flux(M, Z, t, filttable):
     filtnames = np.array(filttable['filtname'])
     filtfuncs = [load_filter(filttable.loc[ii,'path']) for ii in range(len(filttable))]
 
-    passband_wl = 1e-8 * np.array(filttable['weff[ANGSTROM]'])
     zp_spectralflux = 1e8 * np.array(filttable['zp_spectralflux[ERG/S/CM2/ANGSTROM]'])
 
     # Calculate magnitudes
@@ -614,6 +610,8 @@ def SSE_MS_get_flux(M, Z, t, filttable):
         wavelength_cm = 1e-8 * np.array(filtfuncs[ii]['wavelength[ANGSTROM]']) # cm
         transmission = np.array(filtfuncs[ii]['transmission'])
 
+        passband_wl = np.sum(0.5 * (transmission[1:] + transmission[:-1]) * (wavelength_cm[1:] - wavelength_cm[:-1]))
+
         # Use trapezoid rule to evaluate integral of filtfunc * Planck distribution
         planck = 2 * h * c ** 2 / (wavelength_cm.reshape((1, wavelength_cm.size)) ** 5 * (np.exp(h * c / (k * np.outer(Teff_K, wavelength_cm))) - 1))
 
@@ -622,7 +620,7 @@ def SSE_MS_get_flux(M, Z, t, filttable):
 
         luminosity_cgs = 4 * np.pi ** 2 * rad ** 2 * integrated_planck_weighted
 
-        spectral_lum = luminosity_cgs / (4 * np.pi * 3.086e19 ** 2 * passband_wl[ii])
+        spectral_lum = luminosity_cgs / (4 * np.pi * 3.086e19 ** 2 * passband_wl)
 
         # Calculate magnitudes (exclude black holes)
         mag_arr = -2.5 * np.log10(spectral_lum / zp_spectralflux[ii])
@@ -750,7 +748,6 @@ class Snapshot:
 
         self.filtertable = pd.DataFrame({'filtname': [],
                                              'path': [],
-                                   'weff[ANGSTROM]': [],
                               'zp_spectralflux[JY]': []})
 
     def convert_units(self, arr, in_unit='code', out_unit='code'):
@@ -808,7 +805,7 @@ class Snapshot:
             If specified, only include stars inside this projected radius
 
         max_lum: float (default: None)
-            If specified, only include stars below this luminosity [LSUN]
+            IF specified, only include stars below this luminosity [LSUN]
 
         fluxdict: dict (default: None)
             If specified, makes upper and lower (observed) magnitude cuts in certain filters
@@ -893,6 +890,8 @@ class Snapshot:
         bin_obsMag0_#: observed magnitude in filter # for first star in binary (np.nan for single or black hole)
         bin_obsMag1_#: observed magnitude in filter # for second star in binary (np.nan for single or black hole)
         tot_obsMag_#: total observed magnitude in filter #, same as absMag_# for singles and is the magnitude sum of a binary pair if binary
+        
+        Code assumes calculation in energy units, photometry in energy units.
 
         Parameters
         ----------
@@ -917,7 +916,6 @@ class Snapshot:
         filtnames = np.array(filttable['filtname'])
         filtfuncs = [load_filter(filttable.loc[ii,'path']) for ii in range(len(filttable))]
         
-        passband_wl = self.convert_units(np.array(filttable['weff[ANGSTROM]']), 'angstrom', 'cm')
         zp_spectralflux = self.convert_units(np.array(filttable['zp_spectralflux[ERG/S/CM2/ANGSTROM]']), 'erg/s/cm2/angstrom', 'erg/s/cm3')
 
         if self.dist is not None:
@@ -932,6 +930,9 @@ class Snapshot:
             # Get filter function information
             wavelength_cm = np.array(self.convert_units(filtfuncs[ii]['wavelength[ANGSTROM]'], 'angstrom', 'cm'))
             transmission = np.array(filtfuncs[ii]['transmission'])
+            
+            # Get normalization integral
+            passband_wl = np.sum(0.5 * (transmission[1:] + transmission[:-1]) * (wavelength_cm[1:] - wavelength_cm[:-1]))
 
             # Use trapezoid rule to evaluate integral of filtfunc * Planck distribution
             Teff_K = self.data.loc[(self.data['binflag'] != 1) & (self.data['startype'] != 14), 'Teff[K]']
@@ -944,7 +945,7 @@ class Snapshot:
             rad_cm = self.convert_units(rad_rsun, 'rsun', 'cm')
             luminosity_cgs = 4 * np.pi ** 2 * rad_cm ** 2 * integrated_planck_weighted
 
-            spectral_lum = luminosity_cgs / (4 * np.pi * self.convert_units(10, 'pc', 'cm') ** 2 * passband_wl[ii])
+            spectral_lum = luminosity_cgs / (4 * np.pi * self.convert_units(10, 'pc', 'cm') ** 2 * passband_wl)
 
             # Calculate magnitudes (exclude black holes)
             self.data.loc[(self.data['binflag'] != 1) & (self.data['startype'] != 14), 'absMag_' + filtnames[ii]] = -2.5 * np.log10(spectral_lum / zp_spectralflux[ii])
@@ -964,7 +965,7 @@ class Snapshot:
             rad0_cm = self.convert_units(rad0_rsun, 'rsun', 'cm')
             luminosity0_cgs = 4 * np.pi ** 2 * rad0_cm ** 2 * integrated_planck_weighted0
 
-            spectral_lum0 = luminosity0_cgs / (4 * np.pi * self.convert_units(10, 'pc', 'cm') ** 2 * passband_wl[ii])
+            spectral_lum0 = luminosity0_cgs / (4 * np.pi * self.convert_units(10, 'pc', 'cm') ** 2 * passband_wl)
 
             # Calculate magnitudes
             self.data.loc[(self.data['binflag'] == 1) & (self.data['bin_startype0'] != 14), 'bin_absMag0_' + filtnames[ii]] = -2.5 * np.log10(spectral_lum0 / zp_spectralflux[ii])
@@ -984,7 +985,7 @@ class Snapshot:
             rad1_cm = self.convert_units(rad1_rsun, 'rsun', 'cm')
             luminosity1_cgs = 4 * np.pi ** 2 * rad1_cm ** 2 * integrated_planck_weighted1
 
-            spectral_lum1 = luminosity1_cgs / (4 * np.pi * self.convert_units(10, 'pc', 'cm') ** 2 * passband_wl[ii])
+            spectral_lum1 = luminosity1_cgs / (4 * np.pi * self.convert_units(10, 'pc', 'cm') ** 2 * passband_wl)
 
             # Calculate magnitudes
             self.data.loc[(self.data['binflag'] == 1) & (self.data['bin_startype1'] != 14), 'bin_absMag1_' + filtnames[ii]] = -2.5 * np.log10(spectral_lum1 / zp_spectralflux[ii])
@@ -1016,7 +1017,6 @@ class Snapshot:
             # Add filter to filtertable
             filterrow = pd.DataFrame({'filtname': [filtnames[ii]],
                                           'path': [filttable.loc[ii,'path']],
-                                'weff[ANGSTROM]': [filttable.loc[ii,'weff[ANGSTROM]']],
            'zp_spectralflux[ERG/S/CM2/ANGSTROM]': [filttable.loc[ii,'zp_spectralflux[ERG/S/CM2/ANGSTROM]']],
                                      })
 
@@ -1045,10 +1045,6 @@ class Snapshot:
         ----------
         seed: int (default: None)
             random seed, if None then don't set a seed
-        
-        Returns
-        -------
-        none
         """
         r_arr = self.data['r']
         vr_arr = self.data['vr']
@@ -1597,7 +1593,7 @@ class Snapshot:
             If specified, only include stars below this mass
             
         max_lum: float (default: None)
-            If specified, only include stars below this luminosity [LSUN]
+            IF specified, only include stars below this luminosity [LSUN]
 
         fluxdict: dict (default: None)
             If specified, makes upper and lower (observed) magnitude cuts in certain filters
