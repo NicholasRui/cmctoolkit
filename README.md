@@ -4,11 +4,19 @@
 
 This set of functions accompanies Rui et al. in prep. on matching observed globular clusters to models in the *CMC Cluster Catalog*.
 
-# Contents of *PARAM####.txt*
+# Model Data
 
-We have included in this repository a *PARAM####.txt* corresponding to every snapshot in all 148 models in the *CMC Cluster Catalog* for which the snapshot time is >10 Gyr. This file gives for each model a list of interesting parameters/properties, described below. Some parameters are given as nan when a meaningful value cannot be assigned (e.g., the velocity dispersion of black holes in a cluster with no black holes).
+We have included in the "CMC" directory of this repository a *SBP####.txt*, *VDP####.txt*, and *PARAM####.txt* corresponding to every snapshot in all 148 models in the *CMC Cluster Catalog* for which the snapshot time is >10 Gyr, as well as for all extra models run to fit NGC 6624 better (see Rui et al., Section 3.7). The latter are filed under the subdirectory "CMC/NGC6624/".
 
-## SSE startypes
+## Contents of *SBP####.txt* and *VDP####.txt*
+
+The *SBP####.txt* and *VDP####.txt* files contain the instantaneous surface brightness profile (SBP) and one-dimensional velocity dispersion profile (VDP), respectively. The *SBP####.txt* file contains two columns, where the first is the radius in arcsec when viewed from 10 pc, where the small-angle approximation has been made so that scaling to an arbitrary heliocentric distance is convenient. The second column contains the surface brightness in mag/arcsec^2 (this is invariant with distance). The *VDP####.txt* file contains three columns, the first is the radius, the second is the velocity dispersion in km/s, and the third is the uncertainty in the velocity dispersion (also in km/s), computed as the velocity dispersion divided by sqrt(2 * typical number of stars in the annulus).
+
+## Contents of *PARAM####.txt*
+
+The *PARAM####.txt* gives for each model a list of interesting parameters/properties, described below. Some parameters are given as nan when a meaningful value cannot be assigned (e.g., the velocity dispersion of black holes in a cluster with no black holes).
+
+### SSE startypes
 
 The keywords in *PARAM####.txt* sometimes make reference to startypes from the single-star evolution (SSE) prescription from [Hurley et al. 2000](https://academic.oup.com/mnras/article/315/3/543/972062). We reproduce here the meaning of all startype numbers.
 
