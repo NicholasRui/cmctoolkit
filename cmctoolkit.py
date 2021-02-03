@@ -1846,10 +1846,10 @@ class Snapshot:
         weight = r_pc_arr ** -1 * ( np.sqrt(inner) - np.sqrt(outer) )
         
         if qty == 'mass':
-            bin_mass = np.sum(mass_arr.values.reshape(len(mass_arr), 1) * weight, axis=0)
+            bin_mass = np.sum(mass_arr.reshape(len(mass_arr), 1) * weight, axis=0)
             cumdist = np.cumsum(bin_mass) / np.sum(bin_mass)
         elif qty == 'light':
-            bin_light = np.sum(lum_arr.values.reshape(len(lum_arr), 1) * weight, axis=0)
+            bin_light = np.sum(lum_arr.reshape(len(lum_arr), 1) * weight, axis=0)
             cumdist = np.cumsum(bin_light) / np.sum(bin_light)
         
         # Interpolate bin_center AS A FUNCTION OF cumdist and calculate rhm
