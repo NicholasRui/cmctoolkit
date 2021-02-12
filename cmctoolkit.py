@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import h5py
 import scipy.optimize
 import scipy.interpolate
 import gzip
@@ -661,8 +662,9 @@ def find_MS_TO(t, z):
 
 class Snapshot:
     """
-    Snapshot class for snapshot file, usually something like 'initial.snap0137.dat.gz',
-    paired alongside conversion file and, preferably, distance and metallicity.
+    Snapshot class for snapshot file, usually something like 'initial.snap0137.dat.gz' 
+    or 'initial.snapshots.h5', paired alongside conversion file and, preferably, 
+    distance and metallicity.
 
     Parameters
     ----------
@@ -674,8 +676,8 @@ class Snapshot:
         if dict, dictionary of unit conversion factors
         if pd.DataFrame, table corresponding to initial.conv.sh
 
-    age: float
-        age of the cluster at the time of the snapshot in Myr
+    snapshot_name: str
+        key name for h5 snapshots; if unspecified, defaults to the last snapshot
 
     dist: float (default: None)
         distance to cluster in kpc
@@ -694,38 +696,57 @@ class Snapshot:
     dist: float (None)
         distance to cluster in kpc
 
+    age: float (None)
+        age of cluster in Gyr 
+
     filtertable: pd.DataFrame
         table containing information about all filter for which photometry exists
     """
-    def __init__(self, fname, conv, dist=None, z=None):
+    def __init__(self, fname, conv, snapshot_name=None, dist=None, z=None):
         self.dist = dist
         self.z = z
 
-        # Read in snapshot as long list where each line is a str
-        f = gzip.open(fname,'rb')
-        text = str(f.read()).split('\\n')
-        f.close()
+        # Can either load old gzip snapshots or new hdf5 snapshots
+        if '.dat.gz' in fname:
+            # For gzip, read in snapshot as long list where each line is a str
+            f = gzip.open(fname,'rb')
+            text = str(f.read()).split('\\n')
+            f.close()
 
-        # Extract column names
-        colrow = text[1].replace('#',' ').replace('  ',' ').split()
-        colnames = [ colrow[ii][len(str(ii+1))+1:].replace(':','') for ii in range(len(colrow)) ]
+            # Extract column names
+            colrow = text[1].replace('#',' ').replace('  ',' ').split()
+            colnames = [ colrow[ii][len(str(ii+1))+1:].replace(':','') for ii in range(len(colrow)) ]
 
-        # Extract snapshot time
-        t_snapshot = float(text[0].split('#')[1].split('=')[1].split()[0])
+            # Extract snapshot time
+            t_snapshot = float(text[0].split('#')[1].split('=')[1].split()[0])
 
-        # Make a list of lists each of which contains the contents of each object
-        text = text[2:-1]
-        rows = np.array([ np.array(row.split())[:len(colnames)] for row in text ])
+            # Make a list of lists each of which contains the contents of each object
+            text = text[2:-1]
+            rows = np.array([ np.array(row.split())[:len(colnames)] for row in text ])
 
-        rows[np.where(rows == 'na')] = 'nan'
-        rows = rows.astype(float)
+            rows[np.where(rows == 'na')] = 'nan'
+            rows = rows.astype(float)
 
-        # Build a dictionary and cast to pandas DataFrame object
-        table = {}
-        for ii in range(len(colnames)):
-            table[colnames[ii]] = rows[:, ii]
+            # Build a dictionary and cast to pandas DataFrame object
+            table = {}
+            for ii in range(len(colnames)):
+                table[colnames[ii]] = rows[:, ii]
 
-        self.data = pd.DataFrame(table)
+            self.data = pd.DataFrame(table)
+
+        elif '.h5' in fname:
+            # Take the last snapshot from the file if not specified
+            if snapshot_name == None:
+                snapshot_name = list(h5py.File(fname,'r').keys())[-1]
+
+            # New version of CMC prints out pandas DataFrame formatted hdf5 files
+            self.data = pd.read_hdf(fname,key=snapshot_name)
+
+            # Extract snapshot time
+            t_snapshot = float(snapshot_name.split('=')[1])
+
+        else:
+            raise ValueError('unsupported snapshot file type')
 
         # Now, build conversion dictionary
         if (type(conv) == str) or (type(conv) == pd.DataFrame):
