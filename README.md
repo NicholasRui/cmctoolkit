@@ -10,7 +10,7 @@ We have included in the "CMC" directory of this repository a *SBP####.txt*, *VDP
 
 ## Contents of *SBP####.txt* and *VDP####.txt*
 
-The *SBP####.txt* and *VDP####.txt* files contain the instantaneous surface brightness profile (SBP) and one-dimensional velocity dispersion profile (VDP), respectively. The *SBP####.txt* file contains two columns, where the first is the radius in arcsec when viewed from 10 pc, where the small-angle approximation has been made so that scaling to an arbitrary heliocentric distance is convenient. The second column contains the surface brightness in mag/arcsec^2 (this is invariant with distance). The *VDP####.txt* file contains three columns, the first is the radius, the second is the velocity dispersion in km/s, and the third is the uncertainty in the velocity dispersion (also in km/s), computed as the velocity dispersion divided by sqrt(2 * typical number of stars in the annulus).
+The *SBP####.txt* and *VDP####.txt* files contain the instantaneous surface brightness profile (SBP) and one-dimensional velocity dispersion profile (VDP), respectively. The *SBP####.txt* file contains two columns, where the first is the radius in arcsec when viewed from 10 pc, where the small-angle approximation has been made so that scaling to an arbitrary heliocentric distance is convenient. The second column contains the surface brightness in mag/arcsec^2 (this is invariant with distance). The *VDP####.txt* file contains three columns, the first is the radius in pc, the second is the velocity dispersion in km/s, and the third is the uncertainty in the velocity dispersion (also in km/s), computed as the velocity dispersion divided by sqrt(2 * typical number of stars in the annulus).
 
 ## Contents of *PARAM####.txt*
 
@@ -140,6 +140,9 @@ snapshot table
 
 **unitdict**: dict
 Dictionary containing unit conversion information
+
+**snapshot_name**: str
+key name for h5 snapshots; if unspecified, defaults to the last snapshot
 
 **dist**: float (None)
 distance to cluster in kpc
