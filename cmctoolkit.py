@@ -25,6 +25,54 @@ startype_other = np.array([7])
 startype_remnant = np.array([10, 11, 12, 13, 14])
 startype_bh = np.array([14])
 
+# Define column dictionaries; Snapshot class will pick the right column dictionary
+# depending on the format of the CMC output
+coldict_h5 = {'binflag': 'binflag',
+               'm_MSUN': 'm_MSUN',
+              'm0_MSUN': 'm0_MSUN',
+              'm1_MSUN': 'm1_MSUN',
+      'luminosity_LSUN': 'luminosity_LSUN',
+   'bin_star_lum0_LSUN': 'bin_star_lum0_LSUN',
+   'bin_star_lum1_LSUN': 'bin_star_lum1_LSUN',
+             'startype': 'startype',
+        'bin_startype0': 'bin_startype0',
+        'bin_startype1': 'bin_startype1',
+          'radius_RSUN': 'radius_RSUN',
+'bin_star_radius0_RSUN': 'bin_star_radius0_RSUN',
+'bin_star_radius1_RSUN': 'bin_star_radius1_RSUN',
+                    'r': 'r',
+                   'vr': 'vr',
+                   'vt': 'vt',
+                'ospin': 'ospin',
+               'ospin0': 'ospin0',
+               'ospin1': 'ospin1',
+                'dmdt0': 'dmdt0',
+                'dmdt1': 'dmdt1',
+             }
+
+coldict_datgz = {'binflag': 'binflag',
+                  'm_MSUN': 'm[MSUN]',
+                 'm0_MSUN': 'm0[MSUN]',
+                 'm1_MSUN': 'm1[MSUN]',
+         'luminosity_LSUN': 'luminosity[LSUN]',
+      'bin_star_lum0_LSUN': 'bin_star_lum0[LSUN]',
+      'bin_star_lum1_LSUN': 'bin_star_lum1[LSUN]',
+                'startype': 'startype',
+           'bin_startype0': 'bin_startype0',
+           'bin_startype1': 'bin_startype1',
+             'radius_RSUN': 'radius[RSUN]',
+   'bin_star_radius0_RSUN': 'bin_star_radius0[RSUN]',
+   'bin_star_radius1_RSUN': 'bin_star_radius1[RSUN]',
+                       'r': 'r',
+                      'vr': 'vr',
+                      'vt': 'vt',
+                   'ospin': 'ospin',
+                  'ospin0': 'ospin0',
+                  'ospin1': 'ospin1',
+                   'dmdt0': 'dmdt0',
+                   'dmdt1': 'dmdt1',
+                }
+
 def make_unitdict(convfile):
     """
     Helper function which converts a conversion ratio file into a unit dictionary.
@@ -121,7 +169,7 @@ def load_filter(fname):
 
 def load_filtertable(fname):
     """
-    Filter function which loads ascii filter functions with five columns:
+    Filter function which loads ascii filter functions with three columns:
        1. filtname
        2. path
        3. zp_spectralflux[ERG/S/CM2/ANGSTROM]
@@ -733,6 +781,7 @@ class Snapshot:
                 table[colnames[ii]] = rows[:, ii]
 
             self.data = pd.DataFrame(table)
+            self.coldict = coldict_datgz
 
         elif '.h5' in fname:
             # Take the last snapshot from the file if not specified
@@ -744,6 +793,7 @@ class Snapshot:
 
             # Extract snapshot time
             t_snapshot = snapshot_name.split('=')[1].rstrip(')')
+            self.coldict = coldict_h5
 
         else:
             raise ValueError('unsupported snapshot file type')
@@ -848,16 +898,16 @@ class Snapshot:
         # At the beginning, nothing is cut
         good = np.ones(len(self.data)).astype(bool)
 
-        single = (self.data['binflag'] != 1)
-        binary = (self.data['binflag'] == 1)
+        single = (self.data[self.coldict['binflag']] != 1)
+        binary = (self.data[self.coldict['binflag']] == 1)
 
         # Mass cuts
         if min_mass is not None: # Pretend binaries are a single star with double mass
-            good = good & ( ( (self.data['m_MSUN'] > min_mass)                          & single ) |
-                            ( (self.data['m0_MSUN'] + self.data['m1_MSUN'] > min_mass) & binary ) )
+            good = good & ( ( (self.data[self.coldict['m_MSUN']] > min_mass)                          & single ) |
+                            ( (self.data[self.coldict['m0_MSUN']] + self.data[self.coldict['m1_MSUN']] > min_mass) & binary ) )
         if max_mass is not None:
-            good = good & ( ( (self.data['m_MSUN'] < max_mass)                          & single ) |
-                            ( (self.data['m0_MSUN'] + self.data['m1_MSUN'] < max_mass) & binary ) )
+            good = good & ( ( (self.data[self.coldict['m_MSUN']] < max_mass)                          & single ) |
+                            ( (self.data[self.coldict['m0_MSUN']] + self.data[self.coldict['m1_MSUN']] < max_mass) & binary ) )
 
         # Cuts on projected radius (in d)
         if (dmin is not None) | (dmax is not None):
@@ -873,8 +923,8 @@ class Snapshot:
                 
         # Cut on luminosity
         if max_lum is not None:
-            good = good & ( ( single & (self.data['luminosity_LSUN'] < max_lum) ) |
-                            ( binary & (self.data['bin_star_lum0_LSUN'] + self.data['bin_star_lum1_LSUN'] < max_lum) ) )
+            good = good & ( ( single & (self.data[self.coldict['luminosity_LSUN']] < max_lum) ) |
+                            ( binary & (self.data[self.coldict['bin_star_lum0_LSUN']] + self.data[self.coldict['bin_star_lum1_LSUN']] < max_lum) ) )
 
         # Make sure all of the filters are actually there
         if fluxdict is not None:
@@ -961,60 +1011,60 @@ class Snapshot:
             passband_wl = np.sum(0.5 * (transmission[1:] + transmission[:-1]) * (wavelength_cm[1:] - wavelength_cm[:-1]))
 
             # Use trapezoid rule to evaluate integral of filtfunc * Planck distribution
-            Teff_K = self.data.loc[(self.data['binflag'] != 1) & (self.data['startype'] != 14), 'Teff[K]']
+            Teff_K = self.data.loc[(self.data[self.coldict['binflag']] != 1) & (self.data[self.coldict['startype']] != 14), 'Teff[K]']
             planck = 2 * h * c ** 2 / (wavelength_cm.reshape((1, wavelength_cm.size)) ** 5 * (np.exp(h * c / (k * np.outer(Teff_K, wavelength_cm))) - 1))
 
             planck_weighted = planck * transmission.reshape((1, transmission.size))
             integrated_planck_weighted = np.sum(0.5 * (planck_weighted[:,1:] + planck_weighted[:,:-1]) * (wavelength_cm[1:] - wavelength_cm[:-1]), axis=1)
 
-            rad_rsun = self.data.loc[(self.data['binflag'] != 1) & (self.data['startype'] != 14), 'radius_RSUN']
+            rad_rsun = self.data.loc[(self.data[self.coldict['binflag']] != 1) & (self.data[self.coldict['startype']] != 14), self.coldict['radius_RSUN']]
             rad_cm = self.convert_units(rad_rsun, 'rsun', 'cm')
             luminosity_cgs = 4 * np.pi ** 2 * rad_cm ** 2 * integrated_planck_weighted
 
             spectral_lum = luminosity_cgs / (4 * np.pi * self.convert_units(10, 'pc', 'cm') ** 2 * passband_wl)
 
             # Calculate magnitudes (exclude black holes)
-            self.data.loc[(self.data['binflag'] != 1) & (self.data['startype'] != 14), 'absMag_' + filtnames[ii]] = -2.5 * np.log10(spectral_lum / zp_spectralflux[ii])
+            self.data.loc[(self.data[self.coldict['binflag']] != 1) & (self.data[self.coldict['startype']] != 14), 'absMag_' + filtnames[ii]] = -2.5 * np.log10(spectral_lum / zp_spectralflux[ii])
 
             if self.dist is not None:
                 self.data['obsMag_' + filtnames[ii]] = self.data['absMag_' + filtnames[ii]]
                 self.data['obsMag_' + filtnames[ii]] += distance_modulus
 
             # Repeat this process for the first star in each binary
-            Teff0_K = self.data.loc[(self.data['binflag'] == 1) & (self.data['bin_startype0'] != 14), 'bin_Teff0[K]']
+            Teff0_K = self.data.loc[(self.data[self.coldict['binflag']] == 1) & (self.data[self.coldict['bin_startype0']] != 14), 'bin_Teff0[K]']
             planck0 = 2 * h * c ** 2 / (wavelength_cm.reshape((1, wavelength_cm.size)) ** 5 * (np.exp(h * c / (k * np.outer(Teff0_K, wavelength_cm))) - 1))
 
             planck_weighted0 = planck0 * transmission.reshape((1, transmission.size))
             integrated_planck_weighted0 = np.sum(0.5 * (planck_weighted0[:,1:] + planck_weighted0[:,:-1]) * (wavelength_cm[1:] - wavelength_cm[:-1]), axis=1)
 
-            rad0_rsun = self.data.loc[(self.data['binflag'] == 1) & (self.data['bin_startype0'] != 14), 'bin_star_radius0_RSUN']
+            rad0_rsun = self.data.loc[(self.data[self.coldict['binflag']] == 1) & (self.data[self.coldict['bin_startype0']] != 14), self.coldict['bin_star_radius0_RSUN']]
             rad0_cm = self.convert_units(rad0_rsun, 'rsun', 'cm')
             luminosity0_cgs = 4 * np.pi ** 2 * rad0_cm ** 2 * integrated_planck_weighted0
 
             spectral_lum0 = luminosity0_cgs / (4 * np.pi * self.convert_units(10, 'pc', 'cm') ** 2 * passband_wl)
 
             # Calculate magnitudes
-            self.data.loc[(self.data['binflag'] == 1) & (self.data['bin_startype0'] != 14), 'bin_absMag0_' + filtnames[ii]] = -2.5 * np.log10(spectral_lum0 / zp_spectralflux[ii])
+            self.data.loc[(self.data[self.coldict['binflag']] == 1) & (self.data[self.coldict['bin_startype0']] != 14), 'bin_absMag0_' + filtnames[ii]] = -2.5 * np.log10(spectral_lum0 / zp_spectralflux[ii])
 
             if self.dist is not None:
                 self.data['bin_obsMag0_' + filtnames[ii]] = self.data['bin_absMag0_' + filtnames[ii]]
                 self.data['bin_obsMag0_' + filtnames[ii]] += distance_modulus
 
             # Repeat this process for the second star in each binary
-            Teff1_K = self.data.loc[(self.data['binflag'] == 1) & (self.data['bin_startype1'] != 14), 'bin_Teff1[K]']
+            Teff1_K = self.data.loc[(self.data[self.coldict['binflag']] == 1) & (self.data[self.coldict['bin_startype1']] != 14), 'bin_Teff1[K]']
             planck1 = 2 * h * c ** 2 / (wavelength_cm.reshape((1, wavelength_cm.size)) ** 5 * (np.exp(h * c / (k * np.outer(Teff1_K, wavelength_cm))) - 1))
 
             planck_weighted1 = planck1 * transmission.reshape((1, transmission.size))
             integrated_planck_weighted1 = np.sum(0.5 * (planck_weighted1[:,1:] + planck_weighted1[:,:-1]) * (wavelength_cm[1:] - wavelength_cm[:-1]), axis=1)
 
-            rad1_rsun = self.data.loc[(self.data['binflag'] == 1) & (self.data['bin_startype1'] != 14), 'bin_star_radius1_RSUN']
+            rad1_rsun = self.data.loc[(self.data[self.coldict['binflag']] == 1) & (self.data[self.coldict['bin_startype1']] != 14), self.coldict['bin_star_radius1_RSUN']]
             rad1_cm = self.convert_units(rad1_rsun, 'rsun', 'cm')
             luminosity1_cgs = 4 * np.pi ** 2 * rad1_cm ** 2 * integrated_planck_weighted1
 
             spectral_lum1 = luminosity1_cgs / (4 * np.pi * self.convert_units(10, 'pc', 'cm') ** 2 * passband_wl)
 
             # Calculate magnitudes
-            self.data.loc[(self.data['binflag'] == 1) & (self.data['bin_startype1'] != 14), 'bin_absMag1_' + filtnames[ii]] = -2.5 * np.log10(spectral_lum1 / zp_spectralflux[ii])
+            self.data.loc[(self.data[self.coldict['binflag']] == 1) & (self.data[self.coldict['bin_startype1']] != 14), 'bin_absMag1_' + filtnames[ii]] = -2.5 * np.log10(spectral_lum1 / zp_spectralflux[ii])
 
             if self.dist is not None:
                 self.data['bin_obsMag1_' + filtnames[ii]] = self.data['bin_absMag1_' + filtnames[ii]]
@@ -1023,17 +1073,17 @@ class Snapshot:
             # Add total magnitude columns together
             self.data['tot_absMag_' + filtnames[ii]] = np.nan * np.ones(len(self.data))
             
-            good_single = (self.data['binflag'] != 1) & (self.data['startype'] != 14)
+            good_single = (self.data[self.coldict['binflag']] != 1) & (self.data[self.coldict['startype']] != 14)
             self.data.loc[good_single, 'tot_absMag_' + filtnames[ii]] = self.data.loc[good_single, 'absMag_' + filtnames[ii]]
             
-            good_binary = (self.data['binflag'] == 1) & (self.data['bin_startype0'] != 14) & (self.data['bin_startype1'] != 14)
+            good_binary = (self.data[self.coldict['binflag']] == 1) & (self.data[self.coldict['bin_startype0']] != 14) & (self.data[self.coldict['bin_startype1']] != 14)
             self.data.loc[good_binary, 'tot_absMag_' + filtnames[ii]] = add_mags(self.data.loc[good_binary, 'bin_absMag0_' + filtnames[ii]],
                                                                                  self.data.loc[good_binary, 'bin_absMag1_' + filtnames[ii]])
                                                                                  
-            good0_bad1 = (self.data['binflag'] == 1) & (self.data['bin_startype0'] != 14) & (self.data['bin_startype1'] == 14)
+            good0_bad1 = (self.data[self.coldict['binflag']] == 1) & (self.data[self.coldict['bin_startype0']] != 14) & (self.data[self.coldict['bin_startype1']] == 14)
             self.data.loc[good0_bad1, 'tot_absMag_' + filtnames[ii]] = self.data.loc[good0_bad1, 'bin_absMag0_' + filtnames[ii]]
             
-            good1_bad0 = (self.data['binflag'] == 1) & (self.data['bin_startype0'] == 14) & (self.data['bin_startype1'] != 14)
+            good1_bad0 = (self.data[self.coldict['binflag']] == 1) & (self.data[self.coldict['bin_startype0']] == 14) & (self.data[self.coldict['bin_startype1']] != 14)
             self.data.loc[good1_bad0, 'tot_absMag_' + filtnames[ii]] = self.data.loc[good1_bad0, 'bin_absMag1_' + filtnames[ii]]
             
             if self.dist is not None:
@@ -1072,9 +1122,9 @@ class Snapshot:
         seed: int (default: None)
             random seed, if None then don't set a seed
         """
-        r_arr = self.data['r']
-        vr_arr = self.data['vr']
-        vt_arr = self.data['vt']
+        r_arr = self.data[self.coldict['r']]
+        vr_arr = self.data[self.coldict['vr']]
+        vt_arr = self.data[self.coldict['vt']]
 
         # Generate needed random numbers
         if seed is not None:
@@ -1145,9 +1195,9 @@ class Snapshot:
         self.data['bin_Teff1[K]'] = np.nan * np.ones(len(self.data))
 
         # First, calculate Teff for non-BH singles
-        single = (self.data['binflag'] != 1) & (self.data['startype'] != 14)
-        lum_lsun = self.data.loc[single, 'luminosity_LSUN']
-        rad_rsun = self.data.loc[single, 'radius_RSUN']
+        single = (self.data[self.coldict['binflag']] != 1) & (self.data[self.coldict['startype']] != 14)
+        lum_lsun = self.data.loc[single, self.coldict['luminosity_LSUN']]
+        rad_rsun = self.data.loc[single, self.coldict['radius_RSUN']]
 
         lum = self.convert_units(lum_lsun, 'lsun', 'erg/s')
         rad = self.convert_units(rad_rsun, 'rsun', 'cm')
@@ -1155,19 +1205,19 @@ class Snapshot:
         self.data.loc[single, 'Teff[K]'] = (lum / (4 * np.pi * rad ** 2 * sigma)) ** 0.25
 
         # Next, calculate Teff for non-BH doubles... start with the first of the pair
-        binary0 = (self.data['binflag'] == 1) & (self.data['bin_startype0'] != 14)
-        lum0_lsun = self.data.loc[binary0, 'bin_star_lum0_LSUN']
-        rad0_rsun = self.data.loc[binary0, 'bin_star_radius0_RSUN']
+        binary0 = (self.data[self.coldict['binflag']] == 1) & (self.data[self.coldict['bin_startype0']] != 14)
+        lum0_lsun = self.data.loc[binary0, self.coldict['bin_star_lum0_LSUN']]
+        rad0_rsun = self.data.loc[binary0, self.coldict['bin_star_radius0_RSUN']]
 
         lum0 = self.convert_units(lum0_lsun, 'lsun', 'erg/s')
         rad0 = self.convert_units(rad0_rsun, 'rsun', 'cm')
 
-        self.data.loc[(self.data['binflag'] == 1) & (self.data['bin_startype0'] != 14), 'bin_Teff0[K]'] = (lum0 / (4 * np.pi * rad0 ** 2 * sigma)) ** 0.25
+        self.data.loc[(self.data[self.coldict['binflag']] == 1) & (self.data[self.coldict['bin_startype0']] != 14), 'bin_Teff0[K]'] = (lum0 / (4 * np.pi * rad0 ** 2 * sigma)) ** 0.25
 
         # Same as above but for the second star in each binary pair
-        binary1 = (self.data['binflag'] == 1) & (self.data['bin_startype1'] != 14)
-        lum1_lsun = self.data.loc[binary1, 'bin_star_lum1_LSUN']
-        rad1_rsun = self.data.loc[binary1, 'bin_star_radius1_RSUN']
+        binary1 = (self.data[self.coldict['binflag']] == 1) & (self.data[self.coldict['bin_startype1']] != 14)
+        lum1_lsun = self.data.loc[binary1, self.coldict['bin_star_lum1_LSUN']]
+        rad1_rsun = self.data.loc[binary1, self.coldict['bin_star_radius1_RSUN']]
 
         lum1 = self.convert_units(lum1_lsun, 'lsun', 'erg/s')
         rad1 = self.convert_units(rad1_rsun, 'rsun', 'cm')
@@ -1197,28 +1247,28 @@ class Snapshot:
         self.data['bin_g1[CM/S2]'] = np.nan * np.ones(len(self.data))
 
         # Add surface gravity for single
-        mass_msun = self.data.loc[self.data['binflag'] != 1, 'm_MSUN']
+        mass_msun = self.data.loc[self.data[self.coldict['binflag']] != 1, self.coldict['m_MSUN']]
         mass_g = self.convert_units(mass_msun, 'msun', 'g')
-        rad_rsun = self.data.loc[self.data['binflag'] != 1, 'radius_RSUN']
+        rad_rsun = self.data.loc[self.data[self.coldict['binflag']] != 1, self.coldict['radius_RSUN']]
         rad_cm = self.convert_units(rad_rsun, 'rsun', 'cm')
 
-        self.data.loc[self.data['binflag'] != 1, 'g[CM/S2]'] = G * mass_g / rad_cm ** 2
+        self.data.loc[self.data[self.coldict['binflag']] != 1, 'g[CM/S2]'] = G * mass_g / rad_cm ** 2
 
         # Add surface gravity for first binary
-        mass0_msun = self.data.loc[self.data['binflag'] != 1, 'm0_MSUN']
+        mass0_msun = self.data.loc[self.data[self.coldict['binflag']] != 1, self.coldict['m0_MSUN']]
         mass0_g = self.convert_units(mass0_msun, 'msun', 'g')
-        rad0_rsun = self.data.loc[self.data['binflag'] != 1, 'bin_star_radius0_RSUN']
+        rad0_rsun = self.data.loc[self.data[self.coldict['binflag']] != 1, self.coldict['bin_star_radius0_RSUN']]
         rad0_cm = self.convert_units(rad0_rsun, 'rsun', 'cm')
 
-        self.data.loc[self.data['binflag'] == 1, 'g0[CM/S2]'] = G * mass0_g / rad0_cm ** 2
+        self.data.loc[self.data[self.coldict['binflag']] == 1, 'g0[CM/S2]'] = G * mass0_g / rad0_cm ** 2
 
         # Add surface gravity for second binary
-        mass1_msun = self.data.loc[self.data['binflag'] != 1, 'm1_MSUN']
+        mass1_msun = self.data.loc[self.data[self.coldict['binflag']] != 1, self.coldict['m1_MSUN']]
         mass1_g = self.convert_units(mass1_msun, 'msun', 'g')
-        rad1_rsun = self.data.loc[self.data['binflag'] != 1, 'bin_star_radius1_RSUN']
+        rad1_rsun = self.data.loc[self.data[self.coldict['binflag']] != 1, self.coldict['bin_star_radius1_RSUN']]
         rad1_cm = self.convert_units(rad1_rsun, 'rsun', 'cm')
 
-        self.data.loc[self.data['binflag'] == 1, 'g1[CM/S2]'] = G * mass1_g / rad1_cm ** 2
+        self.data.loc[self.data[self.coldict['binflag']] == 1, 'g1[CM/S2]'] = G * mass1_g / rad1_cm ** 2
 
     def make_spatial_density_profile(self, bin_edges=None, min_mass=None, max_mass=None, fluxdict=None, startypes=startype_star):
         """
@@ -1264,14 +1314,14 @@ class Snapshot:
             bin_edges = np.logspace( np.log10(np.min(self.data['d[PC]'])), np.log10(np.max(self.data['d[PC]'])), 100 )
 
         # Read columns and make cuts
-        startype_arr = self.data['startype']
-        bin_startype0_arr = self.data['bin_startype0']
-        bin_startype1_arr = self.data['bin_startype1']
+        startype_arr = self.data[self.coldict['startype']]
+        bin_startype0_arr = self.data[self.coldict['bin_startype0']]
+        bin_startype1_arr = self.data[self.coldict['bin_startype1']]
 
         good = self.make_cuts(min_mass=min_mass, max_mass=max_mass, fluxdict=fluxdict) # make cuts
-        good = good & ( ((self.data['binflag'] != 1) & np.in1d(startype_arr, startypes))
-                      | ((self.data['binflag'] == 1) & (np.in1d(bin_startype0_arr, startypes) | np.in1d(bin_startype1_arr, startypes)) ) )
-        mass_arr = np.array(self.data.loc[good, 'm_MSUN'])
+        good = good & ( ((self.data[self.coldict['binflag']] != 1) & np.in1d(startype_arr, startypes))
+                      | ((self.data[self.coldict['binflag']] == 1) & (np.in1d(bin_startype0_arr, startypes) | np.in1d(bin_startype1_arr, startypes)) ) )
+        mass_arr = np.array(self.data.loc[good, self.coldict['m_MSUN']])
         d_pc_arr = np.array(self.data.loc[good, 'd[PC]'])
 
         count, _ = np.histogram(d_pc_arr, bin_edges)
@@ -1365,14 +1415,14 @@ class Snapshot:
 
         # Define cut and find relevant arrays, only using relevant startypes
         # As long as one of a binary pair is a good startype, include it
-        startype_arr = self.data['startype']
-        bin_startype0_arr = self.data['bin_startype0']
-        bin_startype1_arr = self.data['bin_startype1']
+        startype_arr = self.data[self.coldict['startype']]
+        bin_startype0_arr = self.data[self.coldict['bin_startype0']]
+        bin_startype1_arr = self.data[self.coldict['bin_startype1']]
 
         good = self.make_cuts(min_mass=min_mass, max_mass=max_mass, fluxdict=fluxdict)
-        good = good & ( ((self.data['binflag'] != 1) & np.in1d(startype_arr, startypes))
-                      | ((self.data['binflag'] == 1) & (np.in1d(bin_startype0_arr, startypes) | np.in1d(bin_startype1_arr, startypes)) ) )
-        mass_arr = np.array(self.data.loc[good, 'm_MSUN'])
+        good = good & ( ((self.data[self.coldict['binflag']] != 1) & np.in1d(startype_arr, startypes))
+                      | ((self.data[self.coldict['binflag']] == 1) & (np.in1d(bin_startype0_arr, startypes) | np.in1d(bin_startype1_arr, startypes)) ) )
+        mass_arr = np.array(self.data.loc[good, self.coldict['m_MSUN']])
         d_pc_arr = np.array(self.data.loc[good, 'd[PC]'])
         v_kms_arr = np.array(np.hypot(self.data.loc[good, 'vx[KM/S]'], np.hypot(self.data.loc[good, 'vy[KM/S]'], self.data.loc[good, 'vz[KM/S]'])))
 
@@ -1427,28 +1477,28 @@ class Snapshot:
         """
         # If bin_edges is not specified, use default
         if bin_edges is None:
-            bin_edges = np.logspace( np.log10(np.min(self.data['m_MSUN'])), np.log10(np.max(self.data['m_MSUN'])), 100 )
+            bin_edges = np.logspace( np.log10(np.min(self.data[self.coldict['m_MSUN']])), np.log10(np.max(self.data[self.coldict['m_MSUN']])), 100 )
 
         # Make relevant cuts
-        startype_arr = self.data['startype']
-        bin_startype0_arr = self.data['bin_startype0']
-        bin_startype1_arr = self.data['bin_startype1']
+        startype_arr = self.data[self.coldict['startype']]
+        bin_startype0_arr = self.data[self.coldict['bin_startype0']]
+        bin_startype1_arr = self.data[self.coldict['bin_startype1']]
 
         good = self.make_cuts(dmin=dmin, dmax=dmax, fluxdict=fluxdict)
         
-        good = good & ( ((self.data['binflag'] != 1) & np.in1d(startype_arr, startypes))
-                      | ((self.data['binflag'] == 1) & (np.in1d(bin_startype0_arr, startypes) | np.in1d(bin_startype1_arr, startypes)) ) )
+        good = good & ( ((self.data[self.coldict['binflag']] != 1) & np.in1d(startype_arr, startypes))
+                      | ((self.data[self.coldict['binflag']] == 1) & (np.in1d(bin_startype0_arr, startypes) | np.in1d(bin_startype1_arr, startypes)) ) )
 
-        mass_arr = np.array(self.data['m_MSUN'])
+        mass_arr = np.array(self.data[self.coldict['m_MSUN']])
 
-        binary = np.array(self.data['binflag'] == 1)
+        binary = np.array(self.data[self.coldict['binflag']] == 1)
         good_both_bin = np.array(np.in1d(bin_startype0_arr, startypes) & np.in1d(bin_startype1_arr, startypes))
         good_bin0 = np.array(np.in1d(bin_startype0_arr, startypes) & ~np.in1d(bin_startype1_arr, startypes))
         good_bin1 = np.array(~np.in1d(bin_startype0_arr, startypes) & np.in1d(bin_startype1_arr, startypes))
         
-        mass_arr[good & binary & good_both_bin] = np.array(self.data.loc[good & binary & good_both_bin, 'm0_MSUN']) + np.array(self.data.loc[good & binary & good_both_bin, 'm1_MSUN'])
-        mass_arr[good & binary & good_bin0] = np.array(self.data.loc[good & binary & good_bin0, 'm0_MSUN'])
-        mass_arr[good & binary & good_bin1] = np.array(self.data.loc[good & binary & good_bin1, 'm1_MSUN'])
+        mass_arr[good & binary & good_both_bin] = np.array(self.data.loc[good & binary & good_both_bin, self.coldict['m0_MSUN']]) + np.array(self.data.loc[good & binary & good_both_bin, self.coldict['m1_MSUN']])
+        mass_arr[good & binary & good_bin0] = np.array(self.data.loc[good & binary & good_bin0, self.coldict['m0_MSUN']])
+        mass_arr[good & binary & good_bin1] = np.array(self.data.loc[good & binary & good_bin1, self.coldict['m1_MSUN']])
         
         mass_arr = mass_arr[good]
 
@@ -1498,14 +1548,14 @@ class Snapshot:
             Converged value for mass function slope (if failed fit, returns np.nan)
         """
         # Make relevant cuts
-        startype_arr = self.data['startype']
-        bin_startype0_arr = self.data['bin_startype0']
-        bin_startype1_arr = self.data['bin_startype1']
+        startype_arr = self.data[self.coldict['startype']]
+        bin_startype0_arr = self.data[self.coldict['bin_startype0']]
+        bin_startype1_arr = self.data[self.coldict['bin_startype1']]
 
         good = self.make_cuts(min_mass=min_mass, max_mass=max_mass, dmin=dmin, dmax=dmax, fluxdict=fluxdict)
-        good = good & ( ((self.data['binflag'] != 1) & np.in1d(startype_arr, startypes))
-                      | ((self.data['binflag'] == 1) & (np.in1d(bin_startype0_arr, startypes) | np.in1d(bin_startype1_arr, startypes)) ) )
-        mass_arr = np.array(self.data.loc[good, 'm_MSUN'])
+        good = good & ( ((self.data[self.coldict['binflag']] != 1) & np.in1d(startype_arr, startypes))
+                      | ((self.data[self.coldict['binflag']] == 1) & (np.in1d(bin_startype0_arr, startypes) | np.in1d(bin_startype1_arr, startypes)) ) )
+        mass_arr = np.array(self.data.loc[good, self.coldict['m_MSUN']])
 
         # Define -1 * loglikelihood function, we wish to minimize this likelihood function
         # (in other words, minimize -1 * loglikelihood)
@@ -1568,15 +1618,15 @@ class Snapshot:
         """
         # Define cut and find relevant arrays, only using relevant startypes
         # As long as one of a binary pair is a good startype, include it
-        startype_arr = self.data['startype']
-        bin_startype0_arr = self.data['bin_startype0']
-        bin_startype1_arr = self.data['bin_startype1']
+        startype_arr = self.data[self.coldict['startype']]
+        bin_startype0_arr = self.data[self.coldict['bin_startype0']]
+        bin_startype1_arr = self.data[self.coldict['bin_startype1']]
 
         good = self.make_cuts(min_mass=min_mass, max_mass=max_mass, fluxdict=fluxdict)
-        good = good & ( ((self.data['binflag'] != 1) & np.in1d(startype_arr, startypes))
-                      | ((self.data['binflag'] == 1) & (np.in1d(bin_startype0_arr, startypes) | np.in1d(bin_startype1_arr, startypes)) ) )
+        good = good & ( ((self.data[self.coldict['binflag']] != 1) & np.in1d(startype_arr, startypes))
+                      | ((self.data[self.coldict['binflag']] == 1) & (np.in1d(bin_startype0_arr, startypes) | np.in1d(bin_startype1_arr, startypes)) ) )
 
-        r_pc_arr = self.convert_units(self.data.loc[good, 'r'], 'code', 'pc')
+        r_pc_arr = self.convert_units(self.data.loc[good, self.coldict['r']], 'code', 'pc')
         r_pc_arr = r_pc_arr.values.reshape(len(r_pc_arr), 1)
 
         # Probabilistically count stars in each bin
@@ -1645,14 +1695,14 @@ class Snapshot:
         assert self.dist is not None
         
         # Make relevant cuts
-        startype_arr = self.data['startype']
-        bin_startype0_arr = self.data['bin_startype0']
-        bin_startype1_arr = self.data['bin_startype1']
+        startype_arr = self.data[self.coldict['startype']]
+        bin_startype0_arr = self.data[self.coldict['bin_startype0']]
+        bin_startype1_arr = self.data[self.coldict['bin_startype1']]
 
         good = self.make_cuts(min_mass=min_mass, max_mass=max_mass, fluxdict=fluxdict, max_lum=max_lum)
-        good = good & ( ((self.data['binflag'] != 1) & np.in1d(startype_arr, startypes))
-                      | ((self.data['binflag'] == 1) & (np.in1d(bin_startype0_arr, startypes) | np.in1d(bin_startype1_arr, startypes)) ) )
-        r_pc_arr = self.convert_units(self.data.loc[good, 'r'], 'code', 'pc')
+        good = good & ( ((self.data[self.coldict['binflag']] != 1) & np.in1d(startype_arr, startypes))
+                      | ((self.data[self.coldict['binflag']] == 1) & (np.in1d(bin_startype0_arr, startypes) | np.in1d(bin_startype1_arr, startypes)) ) )
+        r_pc_arr = self.convert_units(self.data.loc[good, self.coldict['r']], 'code', 'pc')
         r_pc_arr = r_pc_arr.values.reshape(len(r_pc_arr), 1)
 
         # Probabilistically count stars in each bin
@@ -1674,9 +1724,9 @@ class Snapshot:
         mag = self.data.loc[good, 'obsMag_{}'.format(filtname)]
         binmag0 = self.data.loc[good, 'bin_obsMag0_{}'.format(filtname)]
         binmag1 = self.data.loc[good, 'bin_obsMag1_{}'.format(filtname)]
-        startype0 = self.data.loc[good, 'bin_startype0']
-        startype1 = self.data.loc[good, 'bin_startype1']
-        binflag = self.data.loc[good, 'binflag']
+        startype0 = self.data.loc[good, self.coldict['bin_startype0']]
+        startype1 = self.data.loc[good, self.coldict['bin_startype1']]
+        binflag = self.data.loc[good, self.coldict['binflag']]
 
         good_bin01 = (binflag == 1) & np.in1d(startype0, startypes) & np.in1d(startype1, startypes)
         good_bin0 = (binflag == 1) & np.in1d(startype0, startypes) & ~np.in1d(startype1, startypes)
@@ -1742,14 +1792,14 @@ class Snapshot:
             uncertainty in velocity dispersions (in km/s)
         """
         # Make relevant cuts
-        startype_arr = self.data['startype']
-        bin_startype0_arr = self.data['bin_startype0']
-        bin_startype1_arr = self.data['bin_startype1']
+        startype_arr = self.data[self.coldict['startype']]
+        bin_startype0_arr = self.data[self.coldict['bin_startype0']]
+        bin_startype1_arr = self.data[self.coldict['bin_startype1']]
 
         good = self.make_cuts(min_mass=min_mass, max_mass=max_mass, fluxdict=fluxdict)
-        good = good & ( ((self.data['binflag'] != 1) & np.in1d(startype_arr, startypes))
-                      | ((self.data['binflag'] == 1) & (np.in1d(bin_startype0_arr, startypes) | np.in1d(bin_startype1_arr, startypes)) ) )
-        r_pc_arr = self.convert_units(self.data.loc[good, 'r'], 'code', 'pc')
+        good = good & ( ((self.data[self.coldict['binflag']] != 1) & np.in1d(startype_arr, startypes))
+                      | ((self.data[self.coldict['binflag']] == 1) & (np.in1d(bin_startype0_arr, startypes) | np.in1d(bin_startype1_arr, startypes)) ) )
+        r_pc_arr = self.convert_units(self.data.loc[good, self.coldict['r']], 'code', 'pc')
         r_pc_arr = r_pc_arr.values.reshape(len(r_pc_arr), 1)
 
         # Probabilistically count stars in each bin
@@ -1769,7 +1819,7 @@ class Snapshot:
         # Read in velocities
         bin_center = (bin_edges[0,:-1] + bin_edges[0,1:]) / 2
 
-        v_arr = np.array(np.hypot(self.data.loc[good, 'vt'], self.data.loc[good, 'vr']))
+        v_arr = np.array(np.hypot(self.data.loc[good, self.coldict['vt']], self.data.loc[good, self.coldict['vr']]))
         v_kms_arr = self.convert_units(v_arr, 'code', 'nb_km/s')
         v_kms_arr = v_kms_arr.reshape(len(v_kms_arr), 1)
 
@@ -1820,38 +1870,38 @@ class Snapshot:
             raise ValueError('enclosed_frac must be between 0 and 1, exclusive')
         
         # Find startypes and make cuts
-        startype_arr = self.data['startype']
-        bin_startype0_arr = self.data['bin_startype0']
-        bin_startype1_arr = self.data['bin_startype1']
+        startype_arr = self.data[self.coldict['startype']]
+        bin_startype0_arr = self.data[self.coldict['bin_startype0']]
+        bin_startype1_arr = self.data[self.coldict['bin_startype1']]
         
         good = self.make_cuts(min_mass=min_mass, max_mass=max_mass, fluxdict=fluxdict)
-        good = good & ( ((self.data['binflag'] != 1) & np.in1d(startype_arr, startypes))
-                      | ((self.data['binflag'] == 1) & (np.in1d(bin_startype0_arr, startypes) | np.in1d(bin_startype1_arr, startypes)) ) )
+        good = good & ( ((self.data[self.coldict['binflag']] != 1) & np.in1d(startype_arr, startypes))
+                      | ((self.data[self.coldict['binflag']] == 1) & (np.in1d(bin_startype0_arr, startypes) | np.in1d(bin_startype1_arr, startypes)) ) )
         
         # Calculate weighted mass distribution
-        r_pc_arr = self.convert_units(self.data.loc[good, 'r'], 'code', 'pc')
+        r_pc_arr = self.convert_units(self.data.loc[good, self.coldict['r']], 'code', 'pc')
         r_pc_arr = r_pc_arr.values.reshape(len(r_pc_arr), 1)
 
-        binflag = np.array(self.data.loc[good, 'binflag'])
-        startype0 = np.array(self.data.loc[good, 'bin_startype0'])
-        startype1 = np.array(self.data.loc[good, 'bin_startype1'])
+        binflag = np.array(self.data.loc[good, self.coldict['binflag']])
+        startype0 = np.array(self.data.loc[good, self.coldict['bin_startype0']])
+        startype1 = np.array(self.data.loc[good, self.coldict['bin_startype1']])
         
         binary = (binflag == 1)
         startype0_ok = (np.in1d(startype0, startypes))
         startype1_ok = (np.in1d(startype1, startypes))
         
         if qty == 'mass':
-            mass_arr = np.array(self.data.loc[good, 'm_MSUN'])
-            mass0_arr = np.array(self.data.loc[good, 'm0_MSUN'])
-            mass1_arr = np.array(self.data.loc[good, 'm1_MSUN'])
+            mass_arr = np.array(self.data.loc[good, self.coldict['m_MSUN']])
+            mass0_arr = np.array(self.data.loc[good, self.coldict['m0_MSUN']])
+            mass1_arr = np.array(self.data.loc[good, self.coldict['m1_MSUN']])
             
             mass_arr[binary & startype0_ok & startype1_ok] = mass0_arr[binary & startype0_ok & startype1_ok] + mass1_arr[binary & startype0_ok & startype1_ok]
             mass_arr[binary & startype0_ok & ~startype1_ok] = mass0_arr[binary & startype0_ok & ~startype1_ok]
             mass_arr[binary & ~startype0_ok & startype1_ok] = mass1_arr[binary & ~startype0_ok & startype1_ok]
         elif qty == 'light':
-            lum_arr = np.array(self.data.loc[good,'luminosity_LSUN'])
-            lum0_arr = np.array(self.data.loc[good,'bin_star_lum0_LSUN'])
-            lum1_arr = np.array(self.data.loc[good,'bin_star_lum1_LSUN'])
+            lum_arr = np.array(self.data.loc[good,self.coldict['luminosity_LSUN']])
+            lum0_arr = np.array(self.data.loc[good,self.coldict['bin_star_lum0_LSUN']])
+            lum1_arr = np.array(self.data.loc[good,self.coldict['bin_star_lum1_LSUN']])
             
             lum_arr[binary & startype0_ok & startype1_ok] = lum0_arr[binary & startype0_ok & startype1_ok] + lum1_arr[binary & startype0_ok & startype1_ok]
             lum_arr[binary & startype0_ok & ~startype1_ok] = lum0_arr[binary & startype0_ok & ~startype1_ok]
@@ -1901,24 +1951,24 @@ class Snapshot:
         paramdict = {}
 
         # Get relevant columns
-        binary = (self.data['binflag'] == 1)
-        startype = np.array(self.data['startype'])
-        bin_startype0 = np.array(self.data['bin_startype0'])
-        bin_startype1 = np.array(self.data['bin_startype1'])
-        ospin = np.array(self.data['ospin'])
-        ospin0 = np.array(self.data['ospin0'])
-        ospin1 = np.array(self.data['ospin1'])
+        binary = (self.data[self.coldict['binflag']] == 1)
+        startype = np.array(self.data[self.coldict['startype']])
+        bin_startype0 = np.array(self.data[self.coldict['bin_startype0']])
+        bin_startype1 = np.array(self.data[self.coldict['bin_startype1']])
+        ospin = np.array(self.data[self.coldict['ospin']])
+        ospin0 = np.array(self.data[self.coldict['ospin0']])
+        ospin1 = np.array(self.data[self.coldict['ospin1']])
 
-        mass = np.array(self.data['m_MSUN'])
-        mass0 = np.array(self.data['m0_MSUN'])
-        mass1 = np.array(self.data['m1_MSUN'])
+        mass = np.array(self.data[self.coldict['m_MSUN']])
+        mass0 = np.array(self.data[self.coldict['m0_MSUN']])
+        mass1 = np.array(self.data[self.coldict['m1_MSUN']])
 
-        lum = np.array(self.data['luminosity_LSUN'])
-        lum0 = np.array(self.data['bin_star_lum0_LSUN'])
-        lum1 = np.array(self.data['bin_star_lum1_LSUN'])
+        lum = np.array(self.data[self.coldict['luminosity_LSUN']])
+        lum0 = np.array(self.data[self.coldict['bin_star_lum0_LSUN']])
+        lum1 = np.array(self.data[self.coldict['bin_star_lum1_LSUN']])
 
-        dmdt0 = np.array(self.data['dmdt0'])
-        dmdt1 = np.array(self.data['dmdt1'])
+        dmdt0 = np.array(self.data[self.coldict['dmdt0']])
+        dmdt1 = np.array(self.data[self.coldict['dmdt1']])
 
         # Get count values
         paramdict['Nsys'] = len(startype)
@@ -2082,15 +2132,15 @@ class Snapshot:
         """
         # Define cut and find relevant arrays, only using relevant startypes
         # As long as one of a binary pair is a good startype, include it
-        startype_arr = self.data['startype']
-        bin_startype0_arr = self.data['bin_startype0']
-        bin_startype1_arr = self.data['bin_startype1']
+        startype_arr = self.data[self.coldict['startype']]
+        bin_startype0_arr = self.data[self.coldict['bin_startype0']]
+        bin_startype1_arr = self.data[self.coldict['bin_startype1']]
 
         good = self.make_cuts(min_mass=min_mass, max_mass=max_mass, fluxdict=fluxdict)
-        good = good & ( ((self.data['binflag'] != 1) & np.in1d(startype_arr, startypes))
-                      | ((self.data['binflag'] == 1) & (np.in1d(bin_startype0_arr, startypes) | np.in1d(bin_startype1_arr, startypes)) ) )
+        good = good & ( ((self.data[self.coldict['binflag']] != 1) & np.in1d(startype_arr, startypes))
+                      | ((self.data[self.coldict['binflag']] == 1) & (np.in1d(bin_startype0_arr, startypes) | np.in1d(bin_startype1_arr, startypes)) ) )
         
-        r_pc_arr = self.convert_units(self.data.loc[good, 'r'], 'code', 'pc')
+        r_pc_arr = self.convert_units(self.data.loc[good, self.coldict['r']], 'code', 'pc')
         r_pc_arr = r_pc_arr.values.reshape(len(r_pc_arr), 1)
         
         # Probabilistically count stars in each bin
@@ -2113,11 +2163,11 @@ class Snapshot:
         # fraction
         all_weight = np.sum(weight)
         
-        bin_good = (self.data.loc[good, 'binflag'] == 1)
+        bin_good = (self.data.loc[good, self.coldict['binflag']] == 1)
         bintype_good = np.in1d(bin_startype0_arr[good], bin_startypes) & np.in1d(bin_startype1_arr[good], bin_startypes)
         
         if (min_q is not None) or (max_q is not None):
-            q_arr = np.array(self.data.loc[good, 'm1_MSUN'] / self.data.loc[good, 'm0_MSUN']) # mass ratio
+            q_arr = np.array(self.data.loc[good, self.coldict['m1_MSUN']] / self.data.loc[good, self.coldict['m0_MSUN']]) # mass ratio
             q_arr[q_arr > 1] **= -1
             
             if (min_q is not None) and (max_q is not None):
@@ -2222,8 +2272,8 @@ class Snapshot:
             # Generate a mass grid to figure out what masses the specified magnitude
             # cuts refer to; do this by interpolating mass wrt. magnitude.
             # Also calculate the corresponding blue/red mags
-            single_bool = (self.data['binflag'] != 1)
-            M = np.geomspace(np.min(self.data.loc[single_bool, 'm_MSUN']), find_MS_TO(self.age, self.z), 1000)
+            single_bool = (self.data[self.coldict['binflag']] != 1)
+            M = np.geomspace(np.min(self.data.loc[single_bool, self.coldict['m_MSUN']]), find_MS_TO(self.age, self.z), 1000)
             fdict = SSE_MS_get_flux(M, self.z, self.age, filttable)
             
             mag_to_mass_interp = scipy.interpolate.interp1d(fdict[mag_filter], M)
@@ -2288,8 +2338,8 @@ class Snapshot:
         
         # Color pad, if specified
         if color_pad is not None:
-            single_bool = np.in1d(self.data['startype'], [0, 1])
-            M = np.geomspace(np.min(self.data.loc[single_bool, 'm_MSUN']), find_MS_TO(self.age, self.z), 1000)
+            single_bool = np.in1d(self.data[self.coldict['startype']], [0, 1])
+            M = np.geomspace(np.min(self.data.loc[single_bool, self.coldict['m_MSUN']]), find_MS_TO(self.age, self.z), 1000)
             fdict = SSE_MS_get_flux(M, self.z, self.age, filttable)
             mag_arr = fdict[mag_filter]
             blue_arr = fdict[blue_filter]
@@ -2336,7 +2386,7 @@ class Snapshot:
             blue_good = np.ones(len(self.data.loc[good])).astype(bool)
         
         # Probabilistically count stars in each bin
-        r_pc_arr = self.convert_units(self.data.loc[good, 'r'], 'code', 'pc')
+        r_pc_arr = self.convert_units(self.data.loc[good, self.coldict['r']], 'code', 'pc')
         r_pc_arr = r_pc_arr.values.reshape(len(r_pc_arr), 1)
         
         if dmin is None:
@@ -2395,13 +2445,13 @@ class Snapshot:
         # Locate the MSTO
         ##mto = find_MS_TO(self.age, self.z)
 
-        ##good = np.where((self.data['m_MSUN'] < mto) & (self.data['binflag'] != 1) & np.in1d(self.data['startype'], [0, 1]))
+        ##good = np.where((self.data[self.coldict['m_MSUN']] < mto) & (self.data[self.coldict['binflag']] != 1) & np.in1d(self.data[self.coldict['startype']], [0, 1]))
         ##ms_singles = self.data.loc[good]
         ##turnoff_mag = np.min(ms_singles[f'tot_obsMag_{mag_filter}'])
         ##turnoff_color = np.min(ms_singles[f'tot_obsMag_{blue_filter}']-ms_singles[f'tot_obsMag_{red_filter}'])
         
-        single_bool = np.in1d(self.data['startype'], [0, 1])
-        m_lower = 0.08#np.min([np.min(self.data.loc[single_bool, 'm_MSUN']), 0.08])
+        single_bool = np.in1d(self.data[self.coldict['startype']], [0, 1])
+        m_lower = 0.08#np.min([np.min(self.data.loc[single_bool, self.coldict['m_MSUN']]), 0.08])
         
         M = np.geomspace(m_lower, find_MS_TO(self.age, self.z), 1000)
         fdict = SSE_MS_get_flux(M, self.z, self.age, filttable)
@@ -2417,11 +2467,11 @@ class Snapshot:
         # Identify observational blue stragglers
         color_good = ((self.data[f'tot_absMag_{blue_filter}'] - self.data[f'tot_absMag_{red_filter}']) < turnoff_color - 0.1)
         mag_good = (self.data[f'tot_absMag_{mag_filter}'] < turnoff_mag)
-        ms_singles_good = (np.in1d(self.data['startype'], [0, 1]) & (self.data['binflag'] != 1))
-        ms_binaries_good = ((np.in1d(self.data['bin_startype0'], [0, 1]) | np.in1d(self.data['bin_startype1'], [0, 1]))
-                          & (~np.in1d(self.data['bin_startype0'], [2, 3, 4, 5, 6, 7, 8, 9])
-                          & ~np.in1d(self.data['bin_startype1'], [2, 3, 4, 5, 6, 7, 8, 9]))
-                          & (self.data['binflag'] == 1))
+        ms_singles_good = (np.in1d(self.data[self.coldict['startype']], [0, 1]) & (self.data[self.coldict['binflag']] != 1))
+        ms_binaries_good = ((np.in1d(self.data[self.coldict['bin_startype0']], [0, 1]) | np.in1d(self.data[self.coldict['bin_startype1']], [0, 1]))
+                          & (~np.in1d(self.data[self.coldict['bin_startype0']], [2, 3, 4, 5, 6, 7, 8, 9])
+                          & ~np.in1d(self.data[self.coldict['bin_startype1']], [2, 3, 4, 5, 6, 7, 8, 9]))
+                          & (self.data[self.coldict['binflag']] == 1))
         
         bs_cat = self.data[color_good & mag_good & (ms_singles_good | ms_binaries_good)]
 
