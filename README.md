@@ -6,9 +6,9 @@ This set of functions accompanies Rui et al. 2021 (doi:10.3847/1538-4357/abed49)
 
 If you find this package helpful to your research, please include citations to the paper and package, e.g., below:
 
-• Rui, N. Z., Kremer, K., Weatherford, N. C., et al. 2021, NicholasRui/cmctoolkit: First Release, 1.0, Zenodo, doi:10.5281/zenodo.4579950
-
 • Rui, N. Z., Kremer, K., Weatherford, N. C., et al. 2021, ApJ, 912, 102
+
+• Rui, N. Z., Kremer, K., Weatherford, N. C., et al. 2021, NicholasRui/cmctoolkit: First Release, 1.0, Zenodo, doi:10.5281/zenodo.4579950
 
 # Model Data
 
