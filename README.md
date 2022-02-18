@@ -2,7 +2,7 @@
 
 *cmctoolkit* is a set of *python* methods for analyzing the output of *Cluster Monte Carlo* (*CMC*), a star cluster simulation code ([Pattabiraman et al. 2013](https://iopscience.iop.org/article/10.1088/0067-0049/204/2/15/meta)). The methods are structured around a *Snapshot* class. These functions are provided to supplement the upcoming release of *CMC*, as well as the recent release of the *CMC Cluster Catalog*, a grid of globular cluster models using *CMC* ([Kremer et al. 2020](https://iopscience.iop.org/article/10.3847/1538-4365/ab7919/meta?casa_token=w1TxNMpr1hUAAAAA:IODrgj9xFbvD1a8AjHjbVoieXoGPYH9BcEbSLKAdUOttsypdcKPArieSkzIKpRA5OoYwhLuVIg)). We include in this directory also a Jupyter notebook (*examples.ipynb*) to demonstrate its use, as well as files containing the simulated V-band surface brightness profile (*SBP####.txt*), 1D velocity dispersion profile (*VDP####.txt*), and miscellaneous other parameters described below (*PARAM####.txt*).
 
-This set of functions accompanies Rui et al. in prep. on matching observed globular clusters to models in the *CMC Cluster Catalog*.
+This set of functions accompanies Rui et al. 2021 (doi:10.3847/1538-4357/abed49), on matching observed globular clusters to models in the *CMC Cluster Catalog*. The Zenodo link and citation can be found here: https://zenodo.org/record/4579951#.Yg8bQO7MLDI
 
 # Model Data
 
