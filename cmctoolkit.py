@@ -1096,8 +1096,7 @@ class Snapshot:
            'zp_spectralflux[ERG/S/CM2/ANGSTROM]': [filttable.loc[ii,'zp_spectralflux[ERG/S/CM2/ANGSTROM]']],
                                      })
 
-            self.filtertable = self.filtertable.append(filterrow, ignore_index=True)
-
+            self.filtertable = pd.concat([self.filtertable, pd.DataFrame(filterrow)],ignore_index=True)
     def make_2d_projection(self, seed=0):
         """
         Appends to a snapshot table a column projecting stellar positions onto the
