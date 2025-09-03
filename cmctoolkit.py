@@ -1097,6 +1097,7 @@ class Snapshot:
                                      })
 
             self.filtertable = pd.concat([self.filtertable, pd.DataFrame(filterrow)],ignore_index=True)
+          
     def make_2d_projection(self, seed=0):
         """
         Appends to a snapshot table a column projecting stellar positions onto the
